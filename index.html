@@ -243,12 +243,12 @@ bind("h3",guard(3,()=>{
     const isNew=!chibiGot.has(p.id),rc=RARITY[p.rarity];chibiGot.add(p.id);chibiCount[p.id]=(chibiCount[p.id]||0)+1;saveChibis();refreshCaps();
     cd.style.setProperty("--rc",rc.color);cd.classList.add("rc");
     h='<span class="tag" style="background:'+rc.color+';color:'+rc.ink+'">'+(isNew?"★ New · ":"")+rc.label+(isNew?"":" · you now have ×"+chibiCount[p.id])+'</span><img class="chibi'+(p.wide?' wide':'')+'" src="'+p.img+'" alt="'+p.name+'">'+(p.text?'<p class="msg">'+p.text+'</p>':'');
-    h+='<div class="btns"><button class="again" id="close">Aww, thanks</button><button class="ghost" id="tocol">View collection</button></div>';
+    h+='<div class="btns"><button class="again" id="close">Continue</button><button class="ghost" id="tocol">View collection</button></div>';
   }else{
     const rare=p.rarity==="rare";
     h='<span class="tag'+(rare?' rare':'')+'">'+(rare?"★ ":"")+p.label+'</span>';
     h+=p.type==="drawing"?p.svg+'<p class="cap-t">'+p.caption+'</p>':'<p class="msg">'+p.text+'</p>';
-    h+='<button class="again" id="close">Aww, thanks</button>';
+    h+='<button class="again" id="close">Continue</button>';
   }
   $("card").innerHTML=h;$("veil").classList.add("on");$("close").onclick=close;
   if($("tocol"))$("tocol").onclick=()=>{close();location.hash="collection"};
