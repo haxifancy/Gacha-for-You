@@ -70,6 +70,10 @@ body{padding-bottom:96px}
 .btns{display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:16px}
 .btns .again{margin-top:0}
 .ghost{border:2px solid var(--pink);background:transparent;color:var(--pink);font:inherit;font-weight:800;padding:9px 22px;border-radius:999px;cursor:pointer}
+.motd{width:100%;max-width:380px;margin:0 0 12px;background:var(--card);border:2px solid var(--pink);border-radius:18px;padding:12px 16px;text-align:center}
+.motd b{display:block;font-size:.72rem;letter-spacing:1.5px;text-transform:uppercase;color:var(--pink);margin-bottom:4px}
+.motd p{margin:0;font-size:1.05rem;line-height:1.4;white-space:pre-wrap}
+.motd small{display:block;margin-top:6px;color:var(--muted);font-size:.78rem}
 .status{min-height:1.4em;color:var(--muted);margin:12px 0 0;text-align:center}
 .how{list-style:none;padding:0;margin:14px 0 0;width:100%;max-width:380px;display:grid;gap:8px}
 .how li{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:16px;padding:10px 14px;opacity:.6;border:2px solid transparent;transition:.2s}
@@ -94,6 +98,11 @@ body{padding-bottom:96px}
 <h1>Little Gacha</h1>
 <p class="sub">Pop in a coin, see what’s inside.</p>
 
+<div class="motd" id="motd" hidden>
+  <b>Message of the day</b>
+  <p id="motdText"></p>
+  <small id="motdDate"></small>
+</div>
 <div class="stage">
 <svg class="m" viewBox="0 0 494 645" xmlns="http://www.w3.org/2000/svg" aria-label="Gacha machine">
   <defs><clipPath id="wc"><rect x="224" y="507" width="64" height="45" rx="4"/></clipPath>
@@ -209,7 +218,10 @@ try{chibiGot=new Set(JSON.parse(localStorage.getItem("gacha_chibis")||"[]"))}cat
 let chibiCount={};
 try{chibiCount=JSON.parse(localStorage.getItem("gacha_counts")||"{}")||{}}catch(e){}
 chibiGot.forEach(id=>{if(!chibiCount[id])chibiCount[id]=1});
-function saveChibis(){try{localStorage.setItem("gacha_chibis",JSON.stringify([...chibiGot]));localStorage.setItem("gacha_counts",JSON.stringify(chibiCount))}catch(e){}}
+/* ?view=GACHA-... opens someone else's collection read-only (nothing is saved on this device) */
+const VIEW=(()=>{try{const v=new URLSearchParams(location.search).get("view");if(!v||v.slice(0,6)!=="GACHA-")return null;let d=JSON.parse(atob(v.slice(6)));if(Array.isArray(d)){const o={};d.forEach(x=>o[x]=1);d=o}return d&&typeof d==="object"?d:null}catch(e){return null}})();
+if(VIEW){chibiGot.clear();for(const k in chibiCount)delete chibiCount[k];Object.entries(VIEW).forEach(([k,v])=>{if(/^[\w-]{1,40}$/.test(k)&&Number.isInteger(v)&&v>0){chibiGot.add(k);chibiCount[k]=v}})}
+function saveChibis(){if(VIEW)return;try{localStorage.setItem("gacha_chibis",JSON.stringify([...chibiGot]));localStorage.setItem("gacha_counts",JSON.stringify(chibiCount))}catch(e){}}
 const key=p=>p.type+":"+(p.text||p.caption);
 function updateCount(){const n=Object.values(SLOTS).reduce((x,y)=>x+y,0);$("count").textContent="Collection: "+chibiGot.size+" of "+n+" found"}
 
@@ -248,7 +260,7 @@ bind("h3",guard(3,()=>{
   seen.add(key(p));try{localStorage.setItem("gacha_seen",JSON.stringify([...seen]))}catch(e){}
   let h;const cd=$("card");cd.classList.remove("rc");
   if(p.type==="chibi"){
-    const isNew=!chibiGot.has(p.id),rc=RARITY[p.rarity];chibiGot.add(p.id);chibiCount[p.id]=(chibiCount[p.id]||0)+1;saveChibis();refreshCaps();
+    const isNew=!chibiGot.has(p.id),rc=RARITY[p.rarity];chibiGot.add(p.id);chibiCount[p.id]=(chibiCount[p.id]||0)+1;saveChibis();refreshCaps();try{notifyPull(p,isNew)}catch(e){}
     cd.style.setProperty("--rc",rc.color);cd.classList.add("rc");
     h='<span class="tag" style="background:'+rc.color+';color:'+rc.ink+'">'+(isNew?"★ New · ":"")+rc.label+(isNew?"":" · you now have ×"+chibiCount[p.id])+'</span><img class="chibi'+(p.wide?' wide':'')+'" src="'+p.img+'" alt="'+p.name+'">'+(p.text?'<p class="msg">'+p.text+'</p>':'');
     h+='<div class="btns"><button class="again" id="close">Continue</button><button class="ghost" id="tocol">View collection</button></div>';
@@ -413,8 +425,9 @@ function renderCollection(){
   $("colCount").textContent="Found "+got+" of "+total;
 }
 function route(){
-  const c=location.hash==="#collection";
+  const c=!!VIEW||location.hash==="#collection";
   $("vMain").hidden=c;$("vCol").hidden=!c;$("fab").textContent=c?"Back":"Collection";
+  if(VIEW){$("fab").hidden=true;document.querySelector(".sc").style.display="none";document.querySelector("#vCol h1").textContent="Her collection";document.querySelector("#vCol .tip").textContent="Read-only view. Tap a found card to see its details."}
   if(c){renderCollection();window.scrollTo(0,0)}
 }
 /* ---------- Save code (move the collection to another device) ---------- */
@@ -440,6 +453,39 @@ $("ld").onclick=()=>{
 };
 $("fab").onclick=()=>{location.hash=location.hash==="#collection"?"machine":"collection"};
 window.addEventListener("hashchange",route);
+/* ---------- Notifications: tapping one opens her collection ---------- */
+function saveCode(){const o={};chibiGot.forEach(id=>o[id]=chibiCount[id]||1);return "GACHA-"+btoa(JSON.stringify(o))}
+function progress(){return chibiGot.size+" of "+Object.values(SLOTS).reduce((x,y)=>x+y,0)+" found"}
+function ping(body,tags){
+  try{
+    if(!NTFY_TOPIC||VIEW||localStorage.getItem("gacha_owner"))return;
+    let click="";try{click="&click="+encodeURIComponent(location.origin+location.pathname+"?view="+encodeURIComponent(saveCode()))}catch(e){}
+    fetch("https://ntfy.sh/"+NTFY_TOPIC+"?title=Little%20Gacha&tags="+tags+click,{method:"POST",body}).catch(()=>{});
+  }catch(e){}
+}
+function notifyPull(p,isNew){ping("She got "+p.name+" ("+RARITY[p.rarity].label+")"+(isNew?" - NEW!":" - now x"+chibiCount[p.id])+"\nCollection: "+progress(),"tada")}
+/* ---------- Message of the day + visit notification ---------- */
+const NTFY_TOPIC="gacha-3l9scteepmplot";   // your private ntfy topic ("" turns visit notifications off)
+(async()=>{
+  try{
+    const r=await fetch("message.json?"+Date.now(),{cache:"no-store"});
+    if(!r.ok)return;const m=await r.json();
+    if(m&&m.text&&String(m.text).trim()){
+      $("motdText").textContent=m.text;
+      let d="";try{d=new Date(m.date+"T00:00:00").toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"})}catch(e){}
+      $("motdDate").textContent=d&&d!=="Invalid Date"?d:"";
+      $("motd").hidden=false;
+    }
+  }catch(e){}
+})();
+try{
+  if(/[?&]owner(=|&|$)/.test(location.search))localStorage.setItem("gacha_owner","1");   // open the site with ?owner once on your own devices to mute visit alerts there
+  const last=+localStorage.getItem("gacha_lastping")||0;
+  if(NTFY_TOPIC&&!VIEW&&!localStorage.getItem("gacha_owner")&&Date.now()-last>30*60*1000){      // at most one alert per 30 minutes
+    localStorage.setItem("gacha_lastping",String(Date.now()));
+    ping("She just opened Little Gacha\nCollection: "+progress(),"eyes");
+  }
+}catch(e){}
 route();
 setStep(1);updateCount();
 </script>

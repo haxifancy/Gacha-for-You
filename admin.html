@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Little Gacha admin</title>
+<style>
+:root{--bg:#fff4f8;--ink:#4a2f45;--card:#fff;--muted:#8d7189;--pink:#ff5fa2;--line:#e8cfe0}
+@media (prefers-color-scheme:dark){:root{--bg:#2a1d2d;--ink:#f8e8f1;--card:#3c2a40;--muted:#c0a6bd;--line:#5b4562}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Nunito","Trebuchet MS",system-ui,sans-serif;padding:20px 16px 60px;display:flex;justify-content:center}
+main{width:100%;max-width:420px;display:flex;flex-direction:column;gap:14px}
+h1{margin:0;font-size:1.5rem}
+.card{background:var(--card);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+label{font-size:.8rem;color:var(--muted);font-weight:700}
+input,textarea{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:2px solid var(--line);border-radius:12px;padding:10px}
+textarea{resize:vertical;min-height:110px}
+button{font:inherit;font-weight:800;border:0;border-radius:999px;padding:11px 20px;cursor:pointer;background:var(--pink);color:#fff}
+button.ghost{background:transparent;color:var(--pink);border:2px solid var(--pink)}
+button:disabled{opacity:.5}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.muted{color:var(--muted);font-size:.85rem;margin:0}
+#cur{margin:0;white-space:pre-wrap}
+#status{min-height:1.4em;font-weight:700;margin:0}
+.ok{color:#2e9e5b}.bad{color:#d6283a}
+details summary{cursor:pointer;font-weight:800}
+</style>
+</head>
+<body>
+<main>
+  <h1>Little Gacha admin</h1>
+
+  <div class="card">
+    <label>Showing on the site right now</label>
+    <p id="cur" class="muted">Loading…</p>
+  </div>
+
+  <div class="card">
+    <label for="text">Today’s message of the day</label>
+    <textarea id="text" maxlength="400" placeholder="Write something nice…"></textarea>
+    <p class="muted" id="count">0 / 400</p>
+    <div class="row">
+      <button id="post">Post message</button>
+      <button id="clear" class="ghost">Clear message</button>
+    </div>
+    <p id="status"></p>
+  </div>
+
+  <div class="card">
+    <label for="paste">Her collection</label>
+    <p class="muted">Tap any “She just opened…” or “She got…” notification on your phone to see her collection. Or open the latest one from here (the free server keeps messages for about 12 hours):</p>
+    <div class="row"><button id="her">Open latest</button></div>
+    <label for="paste">Or paste a save code she sent you</label>
+    <textarea id="paste" style="min-height:60px" placeholder="GACHA-…"></textarea>
+    <div class="row"><button id="openpaste" class="ghost">View pasted code</button></div>
+  </div>
+
+  <details class="card" id="settings">
+    <summary>Settings (first time only)</summary>
+    <label for="repo">GitHub repository (username/repo)</label>
+    <input id="repo" placeholder="yourname/your-repo" autocapitalize="off" autocomplete="off">
+    <label for="branch">Branch</label>
+    <input id="branch" placeholder="main" autocapitalize="off" autocomplete="off">
+    <label for="token">GitHub token (stays on this device only)</label>
+    <input id="token" type="password" placeholder="github_pat_…" autocomplete="off">
+    <div class="row">
+      <button id="save">Save settings</button>
+      <button id="test" class="ghost">Send test notification</button>
+    </div>
+    <p class="muted">Saving also stops the site from sending you a “she opened it” alert when you open it on this device.</p>
+  </details>
+</main>
+
+<script>
+const TOPIC="gacha-3l9scteepmplot";          // same private ntfy topic as the site
+const TZ="Asia/Bangkok";        // the day is counted in this time zone (also used by the daily reminder)
+const $=id=>document.getElementById(id);
+let cfg={};try{cfg=JSON.parse(localStorage.getItem("gacha_admin")||"{}")}catch(e){}
+$("repo").value=cfg.repo||"";$("branch").value=cfg.branch||"main";$("token").value=cfg.token||"";
+if(!cfg.repo||!cfg.token)$("settings").open=true;
+
+function say(t,ok){const s=$("status");s.textContent=t;s.className=ok===true?"ok":ok===false?"bad":""}
+function today(){return new Date().toLocaleDateString("en-CA",{timeZone:TZ})}
+function b64(s){return btoa(unescape(encodeURIComponent(s)))}
+function ghError(st){
+  if(st===401)return "GitHub didn’t accept the token (wrong or expired). Make a new one in Settings.";
+  if(st===403||st===404)return "The token can’t write to that repository. Check the repo name and that the token has Contents: Read and write.";
+  if(st===409||st===422)return "GitHub says the file changed. Please press the button again.";
+  return "GitHub returned error "+st+".";
+}
+async function gh(method,body){
+  const url="https://api.github.com/repos/"+cfg.repo+"/contents/message.json"+(method==="GET"?"?ref="+encodeURIComponent(cfg.branch):"");
+  return fetch(url,{method,headers:{Authorization:"Bearer "+cfg.token,Accept:"application/vnd.github+json","Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+}
+async function publish(text){
+  if(!cfg.repo||!cfg.token)throw new Error("Open Settings and fill in your repository and token first.");
+  let sha;const g=await gh("GET");
+  if(g.ok)sha=(await g.json()).sha;else if(g.status!==404)throw new Error(ghError(g.status));
+  const body={message:"Message of the day",branch:cfg.branch,content:b64(JSON.stringify({date:today(),text},null,2)+"\n")};
+  if(sha)body.sha=sha;
+  const p=await gh("PUT",body);
+  if(!p.ok)throw new Error(ghError(p.status));
+}
+function show(m){$("cur").textContent=m&&m.text?m.text+"\n— "+m.date:"Nothing is showing right now."}
+async function load(){
+  try{const r=await fetch("message.json?"+Date.now(),{cache:"no-store"});if(r.ok){const m=await r.json();show(m);if(m.text&&!$("text").value){$("text").value=m.text;count()}}else show(null)}catch(e){show(null)}
+}
+function count(){$("count").textContent=$("text").value.length+" / 400"}
+$("text").oninput=count;
+$("save").onclick=()=>{
+  cfg={repo:$("repo").value.trim().replace(/^https?:\/\/github.com\//,"").replace(/\/+$/,""),branch:$("branch").value.trim()||"main",token:$("token").value.trim()};
+  try{localStorage.setItem("gacha_admin",JSON.stringify(cfg));localStorage.setItem("gacha_owner","1")}catch(e){}
+  say("Saved on this device.",true);
+};
+$("test").onclick=async()=>{
+  try{await fetch("https://ntfy.sh/"+TOPIC+"?title=Little%20Gacha&tags=white_check_mark",{method:"POST",body:"Test notification from your admin page"});say("Test sent. Check your phone.",true)}
+  catch(e){say("Couldn’t reach ntfy. Check your connection.",false)}
+};
+async function run(text,doneMsg){
+  $("post").disabled=$("clear").disabled=true;say("Posting…");
+  try{await publish(text);say(doneMsg,true);show(text?{text,date:today()}:null);if(!text)$("text").value="";count()}
+  catch(e){say(e.message,false)}
+  $("post").disabled=$("clear").disabled=false;
+}
+$("post").onclick=()=>{const t=$("text").value.trim();if(!t)return say("Write a message first.",false);run(t,"Posted! It will show on the site in about a minute.")};
+$("clear").onclick=()=>run("","Cleared. The banner will disappear in about a minute.");
+$("her").onclick=async()=>{
+  say("Looking…");
+  try{
+    const r=await fetch("https://ntfy.sh/"+TOPIC+"/json?poll=1&since=all");
+    const ev=(await r.text()).split("\n").filter(Boolean).map(l=>{try{return JSON.parse(l)}catch(e){return null}}).filter(Boolean).reverse();
+    const m=ev.find(x=>x.click&&x.click.indexOf("?view=")>-1);
+    if(!m)return say("Nothing from her in the last 12 hours. Tap a recent notification on your phone instead.",false);
+    location.href=m.click;
+  }catch(e){say("Couldn’t reach ntfy. Check your connection.",false)}
+};
+$("openpaste").onclick=()=>{
+  const c=$("paste").value.trim().split(/[ \n\r\t]+/).join("");
+  if(c.slice(0,6)!=="GACHA-")return say("That doesn’t look like a save code.",false);
+  location.href="index.html?view="+encodeURIComponent(c);
+};
+load();
+</script>
+</body>
+</html>
