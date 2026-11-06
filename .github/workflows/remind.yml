@@ -1,0 +1,17 @@
+name: Daily reminder
+on:
+  schedule:
+    - cron: "0 2 * * *"      # 09:00 in Thailand (UTC+7). Change the first two numbers to move it.
+  workflow_dispatch:          # lets you run it by hand to test
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remind if no message was posted today
+        run: |
+          TODAY=$(TZ=Asia/Bangkok date +%F)
+          POSTED=$(jq -r '.date // ""' message.json 2>/dev/null || echo "")
+          if [ "$POSTED" != "$TODAY" ]; then
+            curl -s -H "Title: Little Gacha" -H "Tags: bell" -d "Time to post today's message of the day" https://ntfy.sh/gacha-3l9scteepmplot
+          fi
